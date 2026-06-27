@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="PaperLens">
+<meta name="theme-color" content="#001e62">
+<title>PaperLens — Paper Summarizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+/* ── Reset ───────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:   #001e62;
+  --blue:   #0032a1;
+  --azure:  #1a56c4;
+  --yellow: #fcb317;
+  --bg:     #f0f4ff;
+  --card:   #ffffff;
+  --border: #dce6f5;
+  --text:   #111827;
+  --text2:  #4b5563;
+  --text3:  #9ca3af;
+  --ok:     #059669;
+  --err:    #dc2626;
+  --radius: 14px;
+  --font:   'Space Grotesk', -apple-system, sans-serif;
+  --mono:   'JetBrains Mono', ui-monospace, monospace;
+  --safe-t: env(safe-area-inset-top,    0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+html,body{
+  min-height:100%;
+  background:var(--bg);
+  font-family:var(--font);
+  color:var(--text);
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+}
+
+/* ── Sticky header ───────────────────────────────────────────── */
+.header{
+  position:sticky;top:0;z-index:20;
+  background:var(--navy);
+  padding:calc(var(--safe-t) + 0.75rem) 1.25rem 0.75rem;
+  display:flex;align-items:center;gap:0.65rem;
+  box-shadow:0 2px 12px rgba(0,0,0,0.25);
+}
+.header-icon{font-size:1.4rem}
+.header h1{
+  font-size:1.1rem;font-weight:700;
+  color:#fff;letter-spacing:-0.01em;
+}
+.header-badge{
+  margin-left:auto;
+  background:var(--yellow);color:var(--navy);
+  font-size:0.6rem;font-weight:800;
+  padding:0.2rem 0.6rem;border-radius:20px;
+  letter-spacing:0.08em;text-transform:uppercase;
+}
+
+/* ── Layout ──────────────────────────────────────────────────── */
+.wrap{
+  max-width:640px;margin:0 auto;
+  padding:1.25rem 1rem calc(2.5rem + var(--safe-b));
+}
+
+/* ── Cards ───────────────────────────────────────────────────── */
+.card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:1.25rem;
+  margin-bottom:1rem;
+}
+.card-label{
+  font-size:0.65rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.1em;
+  color:var(--text2);margin-bottom:0.9rem;
+}
+
+/* ── Config section (collapsible) ────────────────────────────── */
+.config-toggle{
+  width:100%;display:flex;align-items:center;
+  justify-content:space-between;
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:0.9rem 1.1rem;
+  font-family:var(--font);font-size:0.875rem;font-weight:600;
+  color:var(--text);cursor:pointer;
+  margin-bottom:1rem;
+  -webkit-tap-highlight-color:transparent;
+}
+.config-toggle .status{
+  font-size:0.72rem;font-weight:500;
+  display:flex;align-items:center;gap:0.4rem;
+}
+.status-dot{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--text3);
+}
+.status-dot.ok{background:var(--ok)}
+.config-body{display:none}
+.config-body.open{display:block}
+
+/* ── Form fields ─────────────────────────────────────────────── */
+.field{margin-bottom:0.85rem}
+.field:last-child{margin-bottom:0}
+.field label{
+  display:block;font-size:0.75rem;font-weight:600;
+  color:var(--text2);margin-bottom:0.35rem;
+}
+/* Inputs — 16px prevents iOS zoom */
+input[type=text],input[type=password],input[type=url]{
+  width:100%;padding:0.8rem 1rem;
+  border:1.5px solid var(--border);
+  border-radius:10px;font-size:1rem;
+  font-family:var(--mono);
+  color:var(--text);background:#fff;
+  outline:none;-webkit-appearance:none;
+  transition:border-color 0.15s;
+}
+input[type=text],input[type=url]{font-family:var(--font);font-size:0.95rem}
+input:focus{border-color:var(--azure)}
+input::placeholder{color:var(--text3)}
+
+/* ── Upload zone ─────────────────────────────────────────────── */
+.upload{
+  position:relative;
+  border:2px dashed var(--border);
+  border-radius:var(--radius);
+  padding:2.75rem 1.5rem;
+  text-align:center;cursor:pointer;
+  background:var(--bg);
+  transition:border-color 0.2s,background 0.2s;
+  overflow:hidden;
+}
+/* Scanning signature — thin yellow line sweeps when file picked */
+.upload::after{
+  content:'';position:absolute;
+  left:0;top:-4px;width:100%;height:3px;
+  background:var(--yellow);
+  transform:translateY(-4px);
+  transition:none;
+  opacity:0;
+}
+.upload.scanning::after{
+  opacity:1;
+  animation:scan 1.4s ease-in-out infinite;
+}
+@keyframes scan{
+  0%  {transform:translateY(-4px)}
+  50% {transform:translateY(calc(100% + 4px))}  /* crosses full zone */
+  100%{transform:translateY(calc(100% + 4px));opacity:0}
+}
+.upload.has-file{
+  border-color:var(--blue);
+  background:#eef2ff;
+  border-style:solid;
+}
+.upload input[type=file]{
+  position:absolute;inset:0;
+  opacity:0;cursor:pointer;
+  width:100%;height:100%;
+}
+.upload-emoji{font-size:2.5rem;margin-bottom:0.75rem;display:block}
+.upload h2{font-size:1rem;font-weight:600;margin-bottom:0.3rem}
+.upload p{font-size:0.82rem;color:var(--text2)}
+.file-name{
+  display:none;margin-top:0.75rem;
+  font-size:0.82rem;font-weight:600;color:var(--blue);
+  font-family:var(--mono);
+}
+.upload.has-file .file-name{display:block}
+
+/* ── Divider ─────────────────────────────────────────────────── */
+.divider{
+  display:flex;align-items:center;gap:0.65rem;
+  margin:1rem 0;color:var(--text3);font-size:0.8rem;
+}
+.divider::before,.divider::after{
+  content:'';flex:1;height:1px;background:var(--border)
+}
+
+/* ── Primary button ──────────────────────────────────────────── */
+.btn-primary{
+  width:100%;padding:1rem;
+  background:var(--blue);color:#fff;
+  border:none;border-radius:var(--radius);
+  font-family:var(--font);font-size:1.05rem;font-weight:700;
+  cursor:pointer;letter-spacing:0.01em;
+  -webkit-tap-highlight-color:transparent;
+  transition:background 0.15s,transform 0.1s;
+}
+.btn-primary:active:not(:disabled){background:var(--navy);transform:scale(0.98)}
+.btn-primary:disabled{background:#93b1d8;cursor:not-allowed;transform:none}
+
+/* ── Progress bar ────────────────────────────────────────────── */
+.progress{display:none;margin-top:0.9rem}
+.progress.show{display:block}
+.progress-label{
+  font-size:0.75rem;color:var(--text2);
+  font-family:var(--mono);margin-bottom:0.4rem;
+}
+.progress-track{
+  height:3px;background:var(--border);
+  border-radius:2px;overflow:hidden;
+}
+.progress-fill{
+  height:100%;background:var(--blue);
+  border-radius:2px;transition:width 0.35s ease;width:0%;
+}
+
+/* ── Error ───────────────────────────────────────────────────── */
+.error{
+  display:none;margin-top:0.75rem;
+  padding:0.875rem 1rem;
+  background:#fff5f5;
+  border:1px solid #fecaca;
+  border-radius:10px;
+  color:var(--err);font-size:0.875rem;
+  line-height:1.5;
+}
+.error.show{display:block}
+
+/* ── Results ─────────────────────────────────────────────────── */
+.results{display:none;margin-top:1rem}
+.results.show{display:block}
+.results-head{
+  display:flex;align-items:center;
+  justify-content:space-between;
+  margin-bottom:1rem;
+}
+.results-title{
+  font-size:0.65rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.1em;
+  color:var(--blue);display:flex;align-items:center;gap:0.4rem;
+}
+.results-title::before{
+  content:'';width:7px;height:7px;
+  border-radius:50%;background:var(--yellow);
+}
+.btn-save{
+  padding:0.4rem 0.85rem;
+  border:1.5px solid var(--border);border-radius:8px;
+  background:#fff;font-family:var(--font);
+  font-size:0.78rem;font-weight:600;
+  color:var(--text);cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* ── Markdown output ─────────────────────────────────────────── */
+.md h1,.md h2{
+  font-size:1rem;font-weight:700;
+  margin:1.25rem 0 0.5rem;
+  padding-bottom:0.4rem;
+  border-bottom:1px solid var(--border);
+  color:var(--text);
+}
+.md h1:first-child,.md h2:first-child{margin-top:0}
+.md h3{
+  font-size:0.7rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.09em;
+  color:var(--blue);margin:1rem 0 0.4rem;
+}
+.md p{font-size:0.9rem;margin-bottom:0.6rem;line-height:1.75}
+.md ul,.md ol{padding-left:1.4rem;margin-bottom:0.65rem}
+.md li{font-size:0.9rem;margin-bottom:0.3rem;line-height:1.65}
+.md a{color:var(--azure);text-decoration:none}
+.md a:hover{text-decoration:underline}
+.md em{color:var(--text2)}
+.md strong{font-weight:700}
+.md code{
+  font-family:var(--mono);font-size:0.8rem;
+  background:#eef2ff;padding:1px 5px;
+  border-radius:4px;color:var(--azure);
+}
+.md pre{
+  background:#f3f4f6;border:1px solid var(--border);
+  border-radius:8px;padding:0.9rem;
+  overflow-x:auto;margin-bottom:0.75rem;
+}
+.md hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0}
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────── -->
+<div class="header">
+  <span class="header-icon">🔬</span>
+  <h1>PaperLens</h1>
+  <span class="header-badge">LivAI</span>
+</div>
+
+<div class="wrap">
+
+  <!-- ── Config (collapsible) ──────────────────────────────── -->
+  <button class="config-toggle" onclick="toggleConfig()">
+    <span>⚙ LivAI config</span>
+    <span class="status">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusLabel">Not configured</span>
+    </span>
+  </button>
+
+  <div class="config-body" id="configBody">
+    <div class="card">
+      <div class="field">
+        <label>API key</label>
+        <input type="password" id="apiKey"
+          placeholder="your LivAI token"
+          oninput="onConfigChange()" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Model</label>
+        <input type="text" id="model"
+          value="claude-sonnet-4-6"
+          placeholder="e.g. claude-sonnet-4-6"
+          oninput="onConfigChange()">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Upload card ────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-label">Upload paper</div>
+    <div class="upload" id="uploadZone">
+      <input type="file" id="fileIn" accept=".pdf,application/pdf">
+      <span class="upload-emoji">📄</span>
+      <h2>Tap to select PDF</h2>
+      <p>Works from Files, Mail, Safari downloads</p>
+      <div class="file-name" id="fileName"></div>
+    </div>
+
+    <div class="divider">or paste a link</div>
+
+    <input type="url" id="urlIn"
+      placeholder="https://arxiv.org/abs/…  ·  DOI link">
+  </div>
+
+  <!-- ── Summarize button ───────────────────────────────────── -->
+  <button class="btn-primary" id="goBtn" onclick="go()">
+    ✦  Summarize
+  </button>
+
+  <!-- ── Progress ──────────────────────────────────────────── -->
+  <div class="progress" id="progress">
+    <div class="progress-label" id="progressLabel">Working…</div>
+    <div class="progress-track">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+  </div>
+
+  <!-- ── Error ─────────────────────────────────────────────── -->
+  <div class="error" id="errorBox"></div>
+
+  <!-- ── Results ───────────────────────────────────────────── -->
+  <div class="card results" id="results">
+    <div class="results-head">
+      <span class="results-title">Summary ready</span>
+      <button class="btn-save" onclick="saveMd()">⬇ Save .md</button>
+    </div>
+    <div class="md" id="mdOut"></div>
+  </div>
+
+</div>
+
+<script>
+// ── pdf.js setup ─────────────────────────────────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const LIVAI = 'https://livai-api.llnl.gov/v1/chat/completions';
+
+const SYSTEM = `You are an expert scientific paper summarizer. Produce a structured, \
+scientifically precise summary for a domain-literate scientist — \
+Nature News & Views style: authoritative, concise, zero padding.
+
+Use EXACTLY this Markdown structure:
+
+## [Full paper title]
+*[First Author et al., Journal, Vol, Pages (Year)]*
+**DOI:** [linked DOI if available]
+
+### Science background
+- Problem and why it matters
+- Core mechanism with key equations inline (e.g. ΔE = hν)
+- Essential terminology (define acronyms at first use)
+
+### Methods
+- Platform, instrument, or system used
+- Measurement/analysis approach; key innovations
+- Limitations the paper explicitly notes
+
+### Main results
+- Primary findings — lead every bullet with numbers
+- Comparison to prior work, models, or simulations
+- Caveats and unresolved issues
+
+### Key references
+4–6 central references:
+Author et al., *Journal* Vol, Page (Year) — [doi link]
+
+Style: state science directly, never "this paper shows…". Lead with numbers. Peer-to-peer tone.`;
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let pickedFile = null;
+let lastMd     = '';
+
+// ── Config toggle ─────────────────────────────────────────────────────────────
+function toggleConfig() {
+  const body = document.getElementById('configBody');
+  body.classList.toggle('open');
+}
+
+function onConfigChange() {
+  const key   = document.getElementById('apiKey').value.trim();
+  const dot   = document.getElementById('statusDot');
+  const label = document.getElementById('statusLabel');
+  if (key.length > 5) {
+    dot.className   = 'status-dot ok';
+    label.textContent = 'Ready';
+    // Auto-close config when key is entered
+    document.getElementById('configBody').classList.remove('open');
+  } else {
+    dot.className   = 'status-dot';
+    label.textContent = 'Not configured';
+  }
+}
+
+// ── File picked ───────────────────────────────────────────────────────────────
+document.getElementById('fileIn').addEventListener('change', function () {
+  const f = this.files[0];
+  if (!f) return;
+  pickedFile = f;
+  const zone = document.getElementById('uploadZone');
+  zone.classList.add('has-file');
+  document.getElementById('fileName').textContent =
+    f.name + '  ·  ' + (f.size / 1024 / 1024).toFixed(1) + ' MB';
+  clearError();
+});
+
+// ── Main action ───────────────────────────────────────────────────────────────
+async function go() {
+  clearError(); clearResults();
+  const key   = document.getElementById('apiKey').value.trim();
+  const model = document.getElementById('model').value.trim();
+
+  if (!key) {
+    showError('Tap ⚙ above and enter your LivAI API key first.');
+    return;
+  }
+  if (!model) {
+    showError('Enter a model name in the config above.');
+    return;
+  }
+
+  const btn = document.getElementById('goBtn');
+  btn.disabled = true;
+
+  try {
+    if (pickedFile) {
+      // ── PDF path: extract text locally, send text to LivAI ────────────────
+      const zone = document.getElementById('uploadZone');
+      zone.classList.add('scanning');
+      setProgress('Reading PDF…', 5);
+
+      const buf  = await pickedFile.arrayBuffer();
+      const text = await pdfToText(buf);
+
+      zone.classList.remove('scanning');
+
+      if (!text || text.trim().length < 80) {
+        throw new Error(
+          'No readable text found. The PDF may be image-only (scanned). ' +
+          'Try running it through an OCR tool first.'
+        );
+      }
+
+      const truncated = text.length > 80000 ? text.slice(0, 80000) : text;
+      const userMsg   =
+        `Text extracted from a scientific PDF (${pickedFile.name}):\n\n` +
+        `--- PAPER TEXT ---\n${truncated}`;
+
+      setProgress('Sending to LivAI…', 70);
+      const summary = await callLivAI(userMsg, key, model);
+      showResults(summary);
+
+    } else {
+      // ── URL path ──────────────────────────────────────────────────────────
+      const url = document.getElementById('urlIn').value.trim();
+      if (!url) {
+        throw new Error('Select a PDF or paste a URL first.');
+      }
+      setProgress('Sending to LivAI…', 50);
+      const userMsg =
+        `Summarize the scientific paper at: ${url}\n\n` +
+        'Use the structured format. If full text is unavailable, summarize ' +
+        'from your knowledge and note that uploading the PDF gives a better result.';
+      const summary = await callLivAI(userMsg, key, model);
+      showResults(summary);
+    }
+
+  } catch (e) {
+    showError(e.message);
+  }
+
+  btn.disabled = false;
+  hideProgress();
+}
+
+// ── Extract text from PDF using pdf.js (runs locally, no network) ─────────────
+async function pdfToText(buffer) {
+  const pdf  = await pdfjsLib.getDocument({ data: buffer }).promise;
+  const total = pdf.numPages;
+  let out = '';
+  for (let i = 1; i <= total; i++) {
+    setProgress(`Reading page ${i} of ${total}…`,
+                5 + Math.round((i / total) * 60));
+    const page    = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    out += `--- Page ${i} ---\n` +
+           content.items.map(x => x.str).join(' ') +
+           '\n\n';
+  }
+  return out;
+}
+
+// ── Call LivAI API directly from browser ──────────────────────────────────────
+async function callLivAI(userMsg, apiKey, model) {
+  let resp;
+  try {
+    resp = await fetch(LIVAI, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4096,
+        messages: [
+          { role: 'system', content: SYSTEM },
+          { role: 'user',   content: userMsg },
+        ],
+      }),
+    });
+  } catch (e) {
+    // Network-level failure — likely CORS or no connectivity
+    throw new Error(
+      'Could not reach LivAI. Make sure you are on the LLNL network or VPN. ' +
+      'If you are on the network and still see this, LivAI may not allow ' +
+      'direct browser access — use the Python app instead (paper_lens.py).'
+    );
+  }
+
+  if (resp.status === 401)
+    throw new Error('Invalid API key. Check your LivAI token.');
+  if (resp.status === 403)
+    throw new Error('Access denied. Check your LivAI permissions.');
+  if (resp.status === 429)
+    throw new Error('Rate limit hit. Wait a moment and try again.');
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({}));
+    throw new Error(`LivAI error ${resp.status}: ${d.error?.message || resp.statusText}`);
+  }
+
+  const data    = await resp.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('Empty response from LivAI. Check your model name.');
+  return content;
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function setProgress(label, pct) {
+  document.getElementById('progress').className = 'progress show';
+  document.getElementById('progressLabel').textContent = label;
+  document.getElementById('progressFill').style.width  = pct + '%';
+}
+function hideProgress() {
+  document.getElementById('progress').className = 'progress';
+}
+function showError(msg) {
+  document.getElementById('errorBox').textContent = '⚠  ' + msg;
+  document.getElementById('errorBox').className   = 'error show';
+}
+function clearError()   { document.getElementById('errorBox').className   = 'error'; }
+function clearResults() { document.getElementById('results').className    = 'card results'; }
+
+function showResults(md) {
+  lastMd = md;
+  document.getElementById('mdOut').innerHTML   = marked.parse(md);
+  document.getElementById('results').className = 'card results show';
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+}
+
+function saveMd() {
+  const a  = document.createElement('a');
+  a.href   = URL.createObjectURL(new Blob([lastMd], { type: 'text/markdown' }));
+  a.download = 'summary.md';
+  a.click();
+}
+</script>
+</body>
+</html>
