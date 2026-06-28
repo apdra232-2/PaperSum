@@ -182,8 +182,8 @@ with st.sidebar:
     )
     model = st.text_input(
         "Model",
-        value       = "claude-sonnet-4-6",
-        placeholder = "e.g. claude-sonnet-4-6",
+        value       = "gpt-5.4",
+        placeholder = "e.g. gpt-5.4",
     )
 
     if api_key:

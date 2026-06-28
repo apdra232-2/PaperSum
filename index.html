@@ -320,8 +320,8 @@ input::placeholder{color:var(--text3)}
       <div class="field">
         <label>Model</label>
         <input type="text" id="model"
-          value="claude-sonnet-4-6"
-          placeholder="e.g. claude-sonnet-4-6"
+          value="gpt-5.4"
+          placeholder="e.g. gpt-5.4"
           oninput="onConfigChange()">
       </div>
     </div>
@@ -376,7 +376,7 @@ input::placeholder{color:var(--text3)}
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-const LIVAI = 'https://livai-api.llnl.gov/v1/messages';
+const LIVAI = 'https://livai-api.llnl.gov/v1/chat/completions';
 
 const SYSTEM = `You are an expert scientific paper summarizer. Produce a structured, \
 scientifically precise summary for a domain-literate scientist — \
@@ -534,37 +534,36 @@ async function pdfToText(buffer) {
 
 // ── Call LivAI API directly from browser ──────────────────────────────────────
 async function callLivAI(userMsg, apiKey, model) {
-  // LivAI proxies Anthropic's API — use Anthropic message format
   let resp;
   try {
     resp = await fetch(LIVAI, {
       method:  'POST',
       headers: {
-        'Content-Type':              'application/json',
-        'x-api-key':                 apiKey,
-        'anthropic-version':         '2023-06-01',
-        // Required for direct browser → Anthropic-compatible API calls
-        'anthropic-dangerous-direct-browser-access': 'true',
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model,
         max_tokens: 4096,
-        system: SYSTEM,
         messages: [
-          { role: 'user', content: userMsg },
+          { role: 'system', content: SYSTEM },
+          { role: 'user',   content: userMsg },
         ],
       }),
     });
   } catch (e) {
+    // Network-level failure — likely CORS or no connectivity
     throw new Error(
-      'Could not reach LivAI. Make sure you are on the LLNL network or VPN.'
+      'Could not reach LivAI. Make sure you are on the LLNL network or VPN. ' +
+      'If you are on the network and still see this, LivAI may not allow ' +
+      'direct browser access — use the Python app instead (paper_lens.py).'
     );
   }
 
   if (resp.status === 401)
     throw new Error('Invalid API key. Check your LivAI token.');
   if (resp.status === 403)
-    throw new Error('Access denied — check your LivAI key and network/VPN.');
+    throw new Error('Access denied. Check your LivAI permissions.');
   if (resp.status === 429)
     throw new Error('Rate limit hit. Wait a moment and try again.');
   if (!resp.ok) {
@@ -572,14 +571,10 @@ async function callLivAI(userMsg, apiKey, model) {
     throw new Error(`LivAI error ${resp.status}: ${d.error?.message || resp.statusText}`);
   }
 
-  const data = await resp.json();
-  // Anthropic response: content array of blocks, extract text blocks
-  const text = (data.content || [])
-    .filter(b => b.type === 'text')
-    .map(b => b.text)
-    .join('\n');
-  if (!text) throw new Error('Empty response. Check your model name.');
-  return text;
+  const data    = await resp.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('Empty response from LivAI. Check your model name.');
+  return content;
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
